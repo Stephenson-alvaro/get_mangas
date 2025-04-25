@@ -1,19 +1,52 @@
-# scrape.py
 import asyncio
 from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
 
-async def fetch_html(url: str):
+async def scrape_page(url: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page()
         await page.goto(url)
+        await page.wait_for_load_state("networkidle")
         content = await page.content()
-        print(content)  # Peut être redirigé vers un fichier si besoin
         await browser.close()
+    return content
+
+def parse_catalogue(html: str):
+    soup = BeautifulSoup(html, "html.parser")
+    mangas = []
+
+    for item in soup.select(".bsx"):
+        a_tag = item.select_one("a")
+        if not a_tag:
+            continue
+        href = a_tag["href"]
+        title = a_tag.get("title", "").strip()
+        typename = item.select_one(".typename")
+        manga_type = typename.text.strip() if typename else "Unknown"
+        img_tag = item.select_one("img")
+        img_url = img_tag["src"] if img_tag else ""
+        name = item.select_one(".tt")
+        name_text = name.text.strip() if name else ""
+        volume = item.select_one(".epxs")
+        volume_text = volume.text.strip() if volume else ""
+
+        mangas.append({
+            "url": href,
+            "title": title,
+            "type": manga_type,
+            "image": img_url,
+            "name": name_text,
+            "volume": volume_text,
+        })
+    return mangas
+
+async def main():
+    url = "https://sushiscan.net/catalogue/?page=1"
+    html = await scrape_page(url)
+    mangas = parse_catalogue(html)
+    for manga in mangas:
+        print(manga)
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python scrape.py <URL>")
-    else:
-        asyncio.run(fetch_html(sys.argv[1]))
+    asyncio.run(main())
